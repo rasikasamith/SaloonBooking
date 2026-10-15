@@ -1,0 +1,14 @@
+cd C:\Users\USER\Desktop\Saloon\frontend
+npm run dev
+
+cd C:\Users\USER\Desktop\Saloon
+$env:ConnectionStrings__Saloon='Server=DESKTOP-3AMT40D;Database=saloon-app-db;User Id=sa;Password=sa123;TrustServerCertificate=True;'
+dotnet run --project backend/Saloon.Catalog --urls http://localhost:5141
+
+cd C:\Users\USER\Desktop\Saloon
+$env:ConnectionStrings__Saloon='Server=DESKTOP-3AMT40D;Database=saloon-app-db;User Id=sa;Password=sa123;TrustServerCertificate=True;'
+dotnet run --project backend/Saloon.Appointments --urls http://localhost:5142
+
+cd C:\Users\USER\Desktop\Saloon
+$env:ConnectionStrings__Saloon='Server=DESKTOP-3AMT40D;Database=saloon-app-db;User Id=sa;Password=sa123;TrustServerCertificate=True;'
+dotnet run --project backend/Saloon.Auth --urls http://localhost:5143

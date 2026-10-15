@@ -1,0 +1,15 @@
+node_modules/
+dist/
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+.idea/
+.dotnet-home/
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+**/appsettings.Development.json
+**/appsettings.Local.json
