@@ -1,37 +1,44 @@
 # Studio Sunday — Salon booking system
 
-A React/Vite salon app and three .NET minimal API services backed by Microsoft SQL Server.
+React/Vite customer and salon-owner application backed by three .NET 10 APIs and SQL Server.
 
-## What’s included
+## Authentication and authorization
 
-- **Customer booking flow:** choose a service and a time, then book an appointment.
-- **Salon workspace:** today’s schedule, appointment list and status updates, customer list, and service prices.
-- **Service management:** add a service with its category, duration, and price; it is saved through the Catalog API to SQL Server.
-- **Microservices:** Auth (`/api/auth/login`), Catalog (`/api/services`), and Appointments (`/api/appointments` and `/api/appointments/slots`).
-
-The service menu, homepage popular-services list, and booking price preview load the live catalog from `http://localhost:5141/api/services`. If the Catalog API is unavailable, the UI falls back to sample prices and shows that status. Appointment lists and customer lists still use sample dashboard data; they are not yet wired to their APIs. Reporting has been removed from both the React frontend and backend.
+- Customers can create accounts at `/api/auth/register`. Passwords must be at least 12 characters and include letters and numbers; they are stored as salted PBKDF2 hashes.
+- Login returns a signed JWT with the account ID, name, and role. Tokens expire after 60 minutes by default and remain in browser memory only; refreshing the page signs the user out.
+- Login attempts are limited to 10 per IP per minute. Registration attempts are limited to 5 per IP per hour.
+- Catalog reads and appointment slot availability are public. Appointment creation requires a Customer or Admin token. Reading, editing, deleting, or changing status on appointments, and changing services, requires an Admin token.
+- Configure the same strong JWT signing key, issuer, and audience in Auth, Catalog, and Appointments. Never commit a signing key or database password.
 
 ## Database setup
 
-Run `database/init.sql` in SQL Server Management Studio against the SQL Server instance. It creates the `Users` table and seeds the sample Customer and Admin accounts as salted PBKDF2 password hashes. Configure credentials through environment variables; do not commit passwords to source control:
+Run `database/init.sql` in SQL Server Management Studio. It creates the service, appointment, and user tables and seeds service prices, but does not create login accounts. For local development only, run `database/dev-users.sql` to add `myuser` and `myadmin`, both with the development password `pw123`. **Never run `dev-users.sql` in production.** For production, create a real customer account through the registration screen, then grant the intended owner the Admin role through a controlled database administration process.
+
+For local SQL Server, provide the connection string through an environment variable in each API terminal. Do not put real credentials in appsettings files or Git:
 
 ```powershell
-$env:ConnectionStrings__Saloon='Server=DESKTOP-3AMT40D;Database=saloon-app-db;User Id=sa;Password=<your-password>;TrustServerCertificate=True;'
+$env:ConnectionStrings__Saloon='Server=DESKTOP-3AMT40D;Database=saloon-app-db;User Id=sa;Password=<your-local-password>;TrustServerCertificate=True;'
 ```
 
-For a local instance that requires SQL Server authentication, supply the password in your own terminal session. Rotate any password that has been shared in chat before deploying this app.
+## Local JWT secret
+
+In PowerShell, create one random signing key and store it in each API project's .NET user-secrets store. User secrets stay outside the project directory:
+
+```powershell
+$jwtKey = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(64))
+$projects = @('backend/Saloon.Auth', 'backend/Saloon.Catalog', 'backend/Saloon.Appointments')
+foreach ($project in $projects) {
+    dotnet user-secrets init --project $project
+    dotnet user-secrets set 'Jwt:SigningKey' $jwtKey --project $project
+}
+Remove-Variable jwtKey
+```
+
+Run the user-secrets initialization once per project. Reuse the same key in all three API projects. The defaults `Issuer=Saloon.Auth` and `Audience=Saloon.Api` match between the services.
 
 ## Run locally
 
-Install frontend packages and start Vite:
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-In separate terminals, set the connection string above and run each API:
+In separate terminals, start the APIs (set the SQL connection string in each terminal first):
 
 ```powershell
 dotnet run --project backend/Saloon.Catalog --urls http://localhost:5141
@@ -39,22 +46,36 @@ dotnet run --project backend/Saloon.Appointments --urls http://localhost:5142
 dotnet run --project backend/Saloon.Auth --urls http://localhost:5143
 ```
 
-The APIs allow the Vite origin `http://localhost:5173`. Each service has a `/health` endpoint.
+Then start the frontend:
 
-## Sample sign-in
+```powershell
+cd frontend
+npm install
+npm run dev
+```
 
-Run the SQL setup script before starting Auth. The frontend starts at a sign-in screen and verifies these sample accounts through the Auth API:
+The development frontend uses the API addresses on localhost ports 5141–5143. Each API exposes `/health`. The browser permits Vite at `http://localhost:5173` or `http://localhost:5174` by default.
 
-- Customer: `myuser` / `pw123`
-- Salon Admin: `myadmin` / `pw123`
+## API access
 
-The Auth API checks the password against the stored hash and returns the account role for the frontend to choose a view. This sample does not issue access tokens or protect the other APIs by role yet; add token-based authentication and authorization before using it beyond a local demonstration. Customer bookings are submitted to the Appointments API and saved in `dbo.Appointments`.
+| Endpoint | Access |
+| --- | --- |
+| `POST /api/auth/login` | Anonymous, rate limited |
+| `POST /api/auth/register` | Anonymous customer registration, rate limited |
+| `GET /api/services` | Anonymous |
+| `POST`, `PUT`, `DELETE /api/services` | Admin bearer token |
+| `GET /api/appointments/slots` | Anonymous |
+| `POST /api/appointments` | Customer or Admin bearer token |
+| `GET`, `PUT`, `DELETE /api/appointments` and `PATCH /api/appointments/{id}/status` | Admin bearer token |
 
-## API notes
+The frontend sends the login token in the `Authorization: Bearer <token>` header for protected API calls. In production, deploy over HTTPS, set the same strong `Jwt__SigningKey` secret in each API, and configure `Cors__AllowedOrigins__0` to the exact HTTPS frontend origin. Do not use SQL Server's `sa` account for the deployed services; use a restricted database identity or managed identity with the minimum required permissions.
 
-- Available-slot query: `GET /api/appointments/slots?date=2026-10-14&serviceId=1` (30-minute starts, 9 AM–6 PM).
-- Create appointment: `POST /api/appointments` with `{ "customerName": "...", "phone": "...", "serviceId": 1, "startAt": "2026-10-14T10:00:00" }`.
-- Edit appointment: `PUT /api/appointments/{id}` with the same appointment fields; the API checks for schedule conflicts.
-- Delete appointment: `DELETE /api/appointments/{id}`.
-- Update status: `PATCH /api/appointments/{id}/status` with `{ "status": "Completed" }`.
-"# SaloonBooking" 
+Before publishing, do not copy the local development database as-is: it may already contain the known `myadmin` / `pw123` account. In the production database, deactivate any development accounts, register the real salon-owner account, then promote only that chosen account to Admin:
+
+```sql
+UPDATE dbo.Users SET IsActive = 0 WHERE Username IN (N'myuser', N'myadmin');
+-- After the owner registers, replace the value below with that exact username:
+UPDATE dbo.Users SET Role = N'Admin' WHERE Username = N'<owner-username>';
+```
+
+This is a baseline. Email verification, password reset/recovery, and account/session revocation are not implemented yet and should be added before relying on the app for customer account recovery or long-term sessions.

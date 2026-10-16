@@ -1,0 +1,6 @@
+<Project>
+  <ItemGroup>
+    <!-- Override the vulnerable transitive 9.0.4 reference brought in by SqlClient. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+  </ItemGroup>
+</Project>
